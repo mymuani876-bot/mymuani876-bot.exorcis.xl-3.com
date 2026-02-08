@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>pamain vs Komputer</title>
+
+<style>
+body{
+    font-family:Arial;
+    text-align:center;
+    background:linear-gradient(135deg,#000428,#004e92);
+    color:white;
+}
+
+#board{
+    width:320px;
+    height:320px;
+    margin:auto;
+    display:grid;
+    grid-template-columns:repeat(8,1fr);
+    border:4px solid white;
+}
+
+.cell{
+    width:40px;
+    height:40px;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    font-size:22px;
+    cursor:pointer;
+}
+
+.white{ background:#f0d9b5; color:black; }
+.black{ background:#b58863; }
+
+.selected{ outline:3px solid yellow; }
+
+button{
+    margin-top:10px;
+    padding:8px 15px;
+    border:none;
+    border-radius:6px;
+    cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<h2>♟️ Pemain vs Komputer 🤖</h2>
+<div id="info">Giliran Putih</div>
+<br>
+<div id="board"></div>
+<button onclick="resetGame()">Ulang Game</button>
+
+<script>
+const pieces={
+wp:"♙", wr:"♖", wn:"♘", wb:"♗", wq:"♕", wk:"♔",
+bp:"♟", br:"♜", bn:"♞", bb:"♝", bq:"♛", bk:"♚"
+};
+
+const startBoard=[
+["br","bn","bb","bq","bk","bb","bn","br"],
+["bp","bp","bp","bp","bp","bp","bp","bp"],
+["","","","","","","",""],
+["","","","","","","",""],
+["","","","","","","",""],
+["","","","","","","",""],
+["wp","wp","wp","wp","wp","wp","wp","wp"],
+["wr","wn","wb","wq","wk","wb","wn","wr"]
+];
+
+let boardData, turn, selected;
+const board=document.getElementById("board");
+
+const moveSound = new Audio("https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/move.wav");
+
+function resetGame(){
+    boardData=JSON.parse(JSON.stringify(startBoard));
+    turn="w";
+    selected=null;
+    render();
+    setInfo("Giliran Putih");
+}
+
+function setInfo(t){ document.getElementById("info").innerText=t; }
+
+function render(){
+    board.innerHTML="";
+    for(let r=0;r<8;r++){
+        for(let c=0;c<8;c++){
+            const cell=document.createElement("div");
+            cell.className="cell "+((r+c)%2==0?"white":"black");
+            cell.textContent=pieces[boardData[r][c]]||"";
+            cell.onclick=()=>clickCell(r,c);
+            board.appendChild(cell);
+        }
+    }
+}
+
+function enemy(a,b){
+    if(!a||!b) return false;
+    return a[0]!==b[0];
+}
+
+function pathClear(sr,sc,r,c){
+    let dr=Math.sign(r-sr);
+    let dc=Math.sign(c-sc);
+    sr+=dr; sc+=dc;
+    while(sr!==r||sc!==c){
+        if(boardData[sr][sc]!=="") return false;
+        sr+=dr; sc+=dc;
+    }
+    return true;
+}
+
+function validMove(p,sr,sc,r,c){
+    let dr=r-sr, dc=c-sc;
+
+    switch(p[1]){
+        case "p":
+            let dir=p[0]==="w"?-1:1;
+            if(dc===0 && boardData[r][c]==="" && dr===dir) return true;
+            if(Math.abs(dc)===1 && dr===dir && boardData[r][c]!=="" && enemy(p,boardData[r][c])) return true;
+            return false;
+        case "r": if(sr===r||sc===c) return pathClear(sr,sc,r,c); return false;
+        case "b": if(Math.abs(dr)===Math.abs(dc)) return pathClear(sr,sc,r,c); return false;
+        case "n": return (Math.abs(dr)===2&&Math.abs(dc)===1)||(Math.abs(dr)===1&&Math.abs(dc)===2);
+        case "q":
+            if(sr===r||sc===c||Math.abs(dr)===Math.abs(dc)) return pathClear(sr,sc,r,c);
+            return false;
+        case "k": return Math.abs(dr)<=1 && Math.abs(dc)<=1;
+    }
+    return false;
+}
+
+function findKing(color){
+    for(let r=0;r<8;r++)
+        for(let c=0;c<8;c++)
+            if(boardData[r][c]===color+"k") return {r,c};
+}
+
+function inCheck(color){
+    const k=findKing(color);
+    for(let r=0;r<8;r++){
+        for(let c=0;c<8;c++){
+            const p=boardData[r][c];
+            if(p && p[0]!==color){
+                if(validMove(p,r,c,k.r,k.c)) return true;
+            }
+        }
+    }
+    return false;
+}
+
+function allMoves(color){
+    let m=[];
+    for(let sr=0;sr<8;sr++){
+        for(let sc=0;sc<8;sc++){
+            const p=boardData[sr][sc];
+            if(p && p[0]===color){
+                for(let r=0;r<8;r++){
+                    for(let c=0;c<8;c++){
+                        if(boardData[r][c] && boardData[r][c][0]===color) continue;
+                        if(validMove(p,sr,sc,r,c)){
+                            let save=boardData[r][c];
+                            boardData[r][c]=p;
+                            boardData[sr][sc]="";
+                            if(!inCheck(color)) m.push({sr,sc,r,c});
+                            boardData[sr][sc]=p;
+                            boardData[r][c]=save;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return m;
+}
+
+function aiMove(){
+    let moves=allMoves("b");
+    if(moves.length===0){
+        setInfo("SKAKMAT! Kamu menang 🎉");
+        return;
+    }
+
+    // pilih random biar ringan
+    let m=moves[Math.floor(Math.random()*moves.length)];
+
+    boardData[m.r][m.c]=boardData[m.sr][m.sc];
+    boardData[m.sr][m.sc]="";
+    moveSound.play();
+
+    turn="w";
+    render();
+
+    if(inCheck("w")) setInfo("SKAK!");
+    else setInfo("Giliran Putih");
+}
+
+function clickCell(r,c){
+    if(turn!=="w") return;
+
+    const piece=boardData[r][c];
+
+    if(selected){
+        const {sr,sc}=selected;
+        const sp=boardData[sr][sc];
+
+        if(piece && piece[0]==="w"){ selected=null; render(); return; }
+
+        if(validMove(sp,sr,sc,r,c)){
+            let save=boardData[r][c];
+            boardData[r][c]=sp;
+            boardData[sr][sc]="";
+
+            if(inCheck("w")){
+                boardData[sr][sc]=sp;
+                boardData[r][c]=save;
+                selected=null;
+                render();
+                return;
+            }
+
+            moveSound.play();
+            selected=null;
+            turn="b";
+            render();
+            setTimeout(aiMove,500);
+        }
+    }
+    else if(piece && piece[0]==="w"){
+        selected={sr:r,sc:c};
+        render();
+        board.children[r*8+c].classList.add("selected");
+    }
+}
+
+resetGame();
+</script>
+
+</body>
+</html>
